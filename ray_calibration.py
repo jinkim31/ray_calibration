@@ -94,11 +94,10 @@ def ray_calibrate(decode_maps, decode_masks, target_size, learning_rate=5e-2 ,st
 
 
 def plot(ray_parameters, transforms_camera_to_target, target_size, ray_decimation_rate=1):
-    transforms_camera_to_target = transforms_camera_to_target.detach().cpu().numpy()
-    ray_parameters_flat = ray_parameters.reshape(-1, 4).detach().cpu().numpy()
+    transforms_camera_to_target = transforms_camera_to_target
+    ray_parameters_flat = ray_parameters.reshape(-1, 4)
     ray_parameters_flat = ray_parameters_flat[
         np.random.choice(len(ray_parameters_flat), int(len(ray_parameters_flat)/ray_decimation_rate), replace=False)]
-    target_size = target_size.detach().cpu().numpy()
 
     fig = plt.figure()
     ax = fig.add_subplot(111, projection='3d')
