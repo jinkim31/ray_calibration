@@ -9,23 +9,36 @@ from mpl_toolkits.mplot3d import Axes3D
 from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 
 
-def ray_calibrate(decode_maps, decode_masks, target_size):
+def ray_calibrate(decode_maps, decode_masks, target_size, stop_loss = 1e-1, show_plot=True, verbose=True, device='cpu'):
+    """
+    :param decode_maps: Maps containing X, Y, direction LCD pattern decode results. Values should be between 0.0 and 1.0. Float array-like of size [n_targets, H, W, 2].
+    :param decode_masks: Mask indicating valid regions that LCD lies within images. Values should be either 0.0 or 1.0, Float array-like of size [n_targets, H, W].
+    :param target_size: LCD size in meters. Array-like of size [2].
+    :param stop_loss: Float scalar.
+    :param show_plot: Boolean.
+    :param verbose: Boolean.
+    :param device: String. 'cpu' or 'cuda'.
+    :return: Torch tensor containing ray parameters of shape [H, W, 4].
+    """
+
     # Get input info.
-    decode_maps, decode_masks, target_size = torch.tensor(decode_maps, dtype=torch.float32), torch.tensor(decode_masks,  dtype=torch.uint8), torch.tensor(target_size, dtype=torch.float32)
+    decode_maps = torch.tensor(decode_maps, dtype=torch.float32).to(device)
+    decode_masks = torch.tensor(decode_masks, dtype=torch.uint8).to(device)
+    target_size = torch.tensor(target_size, dtype=torch.float32).to(device)
     image_size = decode_maps.shape[1:3]
     assert (image_size == decode_masks.shape[1:])
     n_targets = len(decode_maps)
     assert (n_targets == len(decode_masks))
 
     # Define trainable parameters.
-    target_pose_parameters = nn.Parameter(torch.tensor([0, 0, 0, 0, 0, 1], dtype=torch.float32).repeat(n_targets, 1))
+    target_pose_parameters = nn.Parameter(torch.tensor([0, 0, 0, 0, 0, 1], dtype=torch.float32).repeat(n_targets, 1).to(device))
     target_pose_parameters[0][0].clamp(0, 0)
     target_pose_parameters[0][1].clamp(0, 0)
     target_pose_parameters[0][2].clamp(0, 0)
     target_pose_parameters[0][3].clamp(0, 0)
     target_pose_parameters[0][4].clamp(0, 0)
     target_pose_parameters[0][5].clamp(1, 1)
-    ray_parameters = nn.Parameter(torch.zeros(*image_size, 4)) # [480, 640, 4]. x, y, u, v
+    ray_parameters = nn.Parameter(torch.zeros(*image_size, 4).to(device)) # [480, 640, 4]. x, y, u, v
 
     # Optimizer.
     optimizer = optim.Adam([target_pose_parameters, ray_parameters], lr=5e-2)
@@ -35,13 +48,11 @@ def ray_calibrate(decode_maps, decode_masks, target_size):
         # Get target pose transforms.
         transforms_camera_to_target = torch.cat([
             euler_to_rotation_matrix(target_pose_parameters),
-            target_pose_parameters[:, 3:].unsqueeze(2)], dim=2) # [n_targets, 3, 4]
+            target_pose_parameters[:, 3:].unsqueeze(2)], dim=2).to(device) # [n_targets, 3, 4]
 
         # Compute loss
-        loss = torch.tensor(0.0)
-        """
+        loss = torch.tensor(0.0).to(device)
         for i_target in range(n_targets):
-
             decode_map = decode_maps[i_target] # 480 * 640 * 2
             decode_mask = decode_masks[i_target] # 480 * 640
             transform_camera_to_target = transforms_camera_to_target[i_target]
@@ -59,73 +70,66 @@ def ray_calibrate(decode_maps, decode_masks, target_size):
             x_error = (target_points_global[..., 0] - (ray_parameters[..., 2] * target_points_global[..., 2]) - ray_parameters[..., 0]).squeeze() * decode_mask
             y_error = (target_points_global[..., 1] - (ray_parameters[..., 3] * target_points_global[..., 2]) - ray_parameters[..., 1]).squeeze() * decode_mask
             loss += ((x_error ** 2).sum() + (y_error ** 2).sum())
-        """
-
-
-        """
-        # Compute target point local positions.
-        target_points_local = torch.cat([
-            decode_maps * target_size.reshape(1, 1, 1, 2),
-            torch.zeros(*decode_masks.shape, 1, dtype=decode_maps.dtype, device=decode_maps.device),
-            torch.ones(*decode_masks.shape, 1, dtype=decode_maps.dtype, device=decode_maps.device)], dim=-1) # [n_targets, H, W, 4]
-
-        # Compute target point global positions.
-        target_points_global = torch.einsum('n h w j, n i j -> n h w i', target_points_local, transforms_camera_to_target) # [n_targets, H, W, 3]
-
-        # Compute loss.
-        x_error = (target_points_global[..., 0] - (ray_parameters[..., 2] * target_points_global[..., 2]) -
-                   ray_parameters[..., 0]).squeeze() * decode_masks
-        y_error = (target_points_global[..., 1] - (ray_parameters[..., 3] * target_points_global[..., 2]) -
-                   ray_parameters[..., 1]).squeeze() * decode_masks
-        loss += ((x_error ** 2).sum() + (y_error ** 2).sum())
-        """
 
 
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
-        print(epoch, loss.item())
+        if verbose:
+            print(f'Epoch {epoch}: {loss.item()}')
 
         # Visualize.
-        if epoch % 100:
-            continue
+        if show_plot and epoch % 100 == 0:
+            plot(ray_parameters, transforms_camera_to_target, target_size)
 
-        fig = plt.figure()
-        ax = fig.add_subplot(111, projection='3d')
-        ray_parameters_flat = ray_parameters.reshape(-1, 4).detach().numpy()[::1000, :]
-        #print(ray_parameters_flat.shape)
-        ax.set_xlim([-5.0, 5.0])
-        ax.set_ylim([-5.0, 5.0])
-        ax.set_zlim([-5.0, 5.0])
+        if loss <= stop_loss:
+            break
 
-        # Draw rays.
-        ax.quiver(
-            ray_parameters_flat[:, 0],
-            ray_parameters_flat[:, 1],
-            np.zeros(len(ray_parameters_flat)),
-            ray_parameters_flat[:, 2],
-            ray_parameters_flat[:, 3],
-            np.ones(len(ray_parameters_flat)),
-            length=3.0,
-        )
+    return ray_parameters.detach().cpu()
 
-        # Draw targets.
-        target_vertices_local = np.array([
-            [0, 0, 0, 1],
-            [target_size[0], 0, 0, 1],
-            [target_size[0], target_size[1], 0, 1],
-            [0, target_size[1], 0, 1],
-        ])
-        target_vertices_global = np.einsum(
-            'p j, b i j -> b p i',
-            target_vertices_local,
-            transforms_camera_to_target.detach().numpy())
-        for target_vertices in target_vertices_global:
-            ax.add_collection3d(Poly3DCollection(
-                [target_vertices[:, :3]], facecolors='cyan', edgecolors='black', linewidths=1, alpha=0.7))
 
-        plt.show()
-        plt.close()
+
+def plot(ray_parameters, transforms_camera_to_target, target_size):
+    transforms_camera_to_target = transforms_camera_to_target.detach().cpu().numpy()
+    ray_parameters_flat = ray_parameters.reshape(-1, 4).detach().cpu().numpy()[::1000, :]
+    target_size = target_size.detach().cpu().numpy()
+
+    fig = plt.figure()
+    ax = fig.add_subplot(111, projection='3d')
+
+    # print(ray_parameters_flat.shape)
+    ax.set_xlim([-5.0, 5.0])
+    ax.set_ylim([-5.0, 5.0])
+    ax.set_zlim([-5.0, 5.0])
+
+    # Draw rays.
+    ax.quiver(
+        ray_parameters_flat[:, 0],
+        ray_parameters_flat[:, 1],
+        np.zeros(len(ray_parameters_flat)),
+        ray_parameters_flat[:, 2],
+        ray_parameters_flat[:, 3],
+        np.ones(len(ray_parameters_flat)),
+        length=3.0,
+    )
+
+    # Draw targets.
+    target_vertices_local = np.array([
+        [0, 0, 0, 1],
+        [target_size[0], 0, 0, 1],
+        [target_size[0], target_size[1], 0, 1],
+        [0, target_size[1], 0, 1],
+    ])
+    target_vertices_global = np.einsum(
+        'p j, b i j -> b p i',
+        target_vertices_local,
+        transforms_camera_to_target)
+    for target_vertices in target_vertices_global:
+        ax.add_collection3d(Poly3DCollection(
+            [target_vertices[:, :3]], facecolors='cyan', edgecolors='black', linewidths=1, alpha=0.7))
+
+    plt.show()
+    plt.close()
 
 
 
