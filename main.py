@@ -1,5 +1,5 @@
 from dataset_generator import generate_dateset
-from ray_calibration import ray_calibrate
+from ray_calibration import ray_calibrate, plot
 import numpy as np
 import cv2
 import torch
@@ -31,5 +31,6 @@ decode_maps, decode_masks = generate_dateset(camera_matrix, rotations_camera_to_
 
 # Calibrate
 start = time.time()
-ray_calibrate(decode_maps, decode_masks, target_size, stop_loss=1e-1, show_plot=False, verbose=True, device='cuda')
+ray_parameters, transforms_camera_to_target, target_size = ray_calibrate(decode_maps, decode_masks, target_size, stop_loss=1e-1, show_plot=False, verbose=True, device='cuda')
+plot(ray_parameters, transforms_camera_to_target, target_size)
 print(f"Calibrated in {time.time() - start:.4f} seconds") #CPU: 266.1496 s, GPU: 52.3428 s

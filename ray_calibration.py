@@ -39,6 +39,7 @@ def ray_calibrate(decode_maps, decode_masks, target_size, stop_loss = 1e-1, show
     target_pose_parameters[0][4].clamp(0, 0)
     target_pose_parameters[0][5].clamp(1, 1)
     ray_parameters = nn.Parameter(torch.zeros(*image_size, 4).to(device)) # [480, 640, 4]. x, y, u, v
+    transforms_camera_to_target = torch.zeros()
 
     # Optimizer.
     optimizer = optim.Adam([target_pose_parameters, ray_parameters], lr=5e-2)
@@ -85,7 +86,7 @@ def ray_calibrate(decode_maps, decode_masks, target_size, stop_loss = 1e-1, show
         if loss <= stop_loss:
             break
 
-    return ray_parameters.detach().cpu()
+    return ray_parameters.detach().cpu(), transforms_camera_to_target.detach().cpu(), target_size.detach().cpu()
 
 
 
