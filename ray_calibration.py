@@ -35,10 +35,11 @@ def ray_calibrate(decode_maps, decode_masks, target_size):
         # Get target pose transforms.
         transforms_camera_to_target = torch.cat([
             euler_to_rotation_matrix(target_pose_parameters),
-            target_pose_parameters[:, 3:].unsqueeze(2)], dim=2)
+            target_pose_parameters[:, 3:].unsqueeze(2)], dim=2) # [n_targets, 3, 4]
 
         # Compute loss
         loss = torch.tensor(0.0)
+        """
         for i_target in range(n_targets):
 
             decode_map = decode_maps[i_target] # 480 * 640 * 2
@@ -58,6 +59,27 @@ def ray_calibrate(decode_maps, decode_masks, target_size):
             x_error = (target_points_global[..., 0] - (ray_parameters[..., 2] * target_points_global[..., 2]) - ray_parameters[..., 0]).squeeze() * decode_mask
             y_error = (target_points_global[..., 1] - (ray_parameters[..., 3] * target_points_global[..., 2]) - ray_parameters[..., 1]).squeeze() * decode_mask
             loss += ((x_error ** 2).sum() + (y_error ** 2).sum())
+        """
+
+
+        """
+        # Compute target point local positions.
+        target_points_local = torch.cat([
+            decode_maps * target_size.reshape(1, 1, 1, 2),
+            torch.zeros(*decode_masks.shape, 1, dtype=decode_maps.dtype, device=decode_maps.device),
+            torch.ones(*decode_masks.shape, 1, dtype=decode_maps.dtype, device=decode_maps.device)], dim=-1) # [n_targets, H, W, 4]
+
+        # Compute target point global positions.
+        target_points_global = torch.einsum('n h w j, n i j -> n h w i', target_points_local, transforms_camera_to_target) # [n_targets, H, W, 3]
+
+        # Compute loss.
+        x_error = (target_points_global[..., 0] - (ray_parameters[..., 2] * target_points_global[..., 2]) -
+                   ray_parameters[..., 0]).squeeze() * decode_masks
+        y_error = (target_points_global[..., 1] - (ray_parameters[..., 3] * target_points_global[..., 2]) -
+                   ray_parameters[..., 1]).squeeze() * decode_masks
+        loss += ((x_error ** 2).sum() + (y_error ** 2).sum())
+        """
+
 
         optimizer.zero_grad()
         loss.backward()
