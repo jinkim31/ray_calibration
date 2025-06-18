@@ -31,8 +31,9 @@ decode_maps, decode_masks = generate_dateset(camera_matrix, rotations_camera_to_
 
 # Calibrate
 start = time.time()
-ray_parameters, transforms_camera_to_target, target_size = ray_calibrate(
+ray_parameters, transforms_camera_to_target = ray_calibrate(
     decode_maps, decode_masks, target_size,
     learning_rate=5e-2, stop_loss=1e-1, show_plot=False, verbose=True, device='cuda')
+
 plot(ray_parameters, transforms_camera_to_target, target_size, ray_decimation_rate=100)
 print(f"Calibrated in {time.time() - start:.4f} seconds") #CPU: 266.1496 s, GPU: 52.3428 s

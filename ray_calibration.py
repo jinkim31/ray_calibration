@@ -19,7 +19,7 @@ def ray_calibrate(decode_maps, decode_masks, target_size, learning_rate=5e-2 ,st
     :param show_plot: Boolean.
     :param verbose: Boolean.
     :param device: String. 'cpu' or 'cuda'.
-    :return: Torch tensor containing ray parameters of shape [H, W, 4].
+    :return: Ray parameters of size [H, W, 4], transforms_camera_to_target of size [n_targets, 3, 4]
     """
 
     # Get input info.
@@ -89,7 +89,7 @@ def ray_calibrate(decode_maps, decode_masks, target_size, learning_rate=5e-2 ,st
         if loss <= stop_loss:
             break
 
-    return ray_parameters.detach().cpu(), transforms_camera_to_target.detach().cpu(), target_size.detach().cpu()
+    return ray_parameters.detach().cpu(), transforms_camera_to_target.detach().cpu()
 
 
 
