@@ -8,7 +8,7 @@ def generate_dateset(camera_matrix, rotations_camera_to_target, translations_cam
     :param translations_camera_to_target: Translation vectors from camera and calibration target poses. Numpy array of size [n_calibration_targets, 3].
     :param target_size: Calibration target size in meters, Array-like of size [2].
     :param image_size: Output image size in pixels. Array-like of size [2].
-    :return: Decoded images for each calibration target poses. [n_calibration_targets, image_size[0], image_size[1]].
+    :return: Decode map and mask for each calibration target poses. [n_calibration_targets, image_size[1], image_size[0], 2] and [n_calibration_targets, image_size[1], image_size[0]].
     """
 
     # Get transforms from 3D world point to 2D image for each target pose.

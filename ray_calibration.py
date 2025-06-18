@@ -9,11 +9,12 @@ from mpl_toolkits.mplot3d import Axes3D
 from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 
 
-def ray_calibrate(decode_maps, decode_masks, target_size, stop_loss = 1e-1, show_plot=True, verbose=True, device='cpu'):
+def ray_calibrate(decode_maps, decode_masks, target_size, learning_rate=5e-2 ,stop_loss=1e-1, show_plot=True, verbose=True, device='cpu'):
     """
     :param decode_maps: Maps containing X, Y, direction LCD pattern decode results. Values should be between 0.0 and 1.0. Float array-like of size [n_targets, H, W, 2].
     :param decode_masks: Mask indicating valid regions that LCD lies within images. Values should be either 0.0 or 1.0, Float array-like of size [n_targets, H, W].
     :param target_size: LCD size in meters. Array-like of size [2].
+    :param learning_rate: Adam optimizer learning rate. Float scalar.
     :param stop_loss: Float scalar.
     :param show_plot: Boolean.
     :param verbose: Boolean.
@@ -32,17 +33,19 @@ def ray_calibrate(decode_maps, decode_masks, target_size, stop_loss = 1e-1, show
 
     # Define trainable parameters.
     target_pose_parameters = nn.Parameter(torch.tensor([0, 0, 0, 0, 0, 1], dtype=torch.float32).repeat(n_targets, 1).to(device))
+    ray_parameters = nn.Parameter(torch.zeros(*image_size, 4).to(device)) # [480, 640, 4]. x, y, u, v
+    transforms_camera_to_target = torch.zeros(n_targets, 3, 4)
+
+    # Make T_1 constant.
     target_pose_parameters[0][0].clamp(0, 0)
     target_pose_parameters[0][1].clamp(0, 0)
     target_pose_parameters[0][2].clamp(0, 0)
     target_pose_parameters[0][3].clamp(0, 0)
     target_pose_parameters[0][4].clamp(0, 0)
     target_pose_parameters[0][5].clamp(1, 1)
-    ray_parameters = nn.Parameter(torch.zeros(*image_size, 4).to(device)) # [480, 640, 4]. x, y, u, v
-    transforms_camera_to_target = torch.zeros()
 
     # Optimizer.
-    optimizer = optim.Adam([target_pose_parameters, ray_parameters], lr=5e-2)
+    optimizer = optim.Adam([target_pose_parameters, ray_parameters], lr=learning_rate)
 
     # Optimization loop.
     for epoch in range(10000):
@@ -90,9 +93,11 @@ def ray_calibrate(decode_maps, decode_masks, target_size, stop_loss = 1e-1, show
 
 
 
-def plot(ray_parameters, transforms_camera_to_target, target_size):
+def plot(ray_parameters, transforms_camera_to_target, target_size, ray_decimation_rate=1):
     transforms_camera_to_target = transforms_camera_to_target.detach().cpu().numpy()
-    ray_parameters_flat = ray_parameters.reshape(-1, 4).detach().cpu().numpy()[::1000, :]
+    ray_parameters_flat = ray_parameters.reshape(-1, 4).detach().cpu().numpy()
+    ray_parameters_flat = ray_parameters_flat[
+        np.random.choice(len(ray_parameters_flat), int(len(ray_parameters_flat)/ray_decimation_rate), replace=False)]
     target_size = target_size.detach().cpu().numpy()
 
     fig = plt.figure()
@@ -131,7 +136,6 @@ def plot(ray_parameters, transforms_camera_to_target, target_size):
 
     plt.show()
     plt.close()
-
 
 
 def euler_to_rotation_matrix(euler):
